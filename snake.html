@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="Generator" content="EditPlus®">
+  <meta name="Author" content="Dimitris Pantazopoulos">
+  <meta name="Keywords" content="snake,game">
+  <meta name="Description" content="snake game">
+  <title>Snake!</title>
+  <style>
+  	div {
+		background: url('xmas.avif');
+		background-repeat: no-repeat;
+		background-size: 550px 450px;
+	}
+  </style>
+ </head>
+ <body>
+ 	<div>
+ 		<canvas id="canvas" width="550" height="450"/>
+	</div>
+	<script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+	
+	<script>
+		// Snake by Dimitris Pantazopoulos for
+		// Bill Demos, Rapidshade, Manolis Korakakis and
+		// the kids to have a nice time during the
+		// Christmas holiday
+		
+		// globals
+		//
+		var canvas = document.getElementById('canvas');
+		var ctx = canvas.getContext('2d');
+		var score = 0;
+		var playing = true;
+		var speed = 100;
+		var version = 1;
+		
+		// the game board
+		//
+		var width = canvas.width;
+		var height = canvas.height;
+		var blockSize = 10;
+		var blocksInWidth = width / blockSize;
+		var blocksInHeight = height / blockSize;
+
+		// global functions
+		//
+		var drawBorder = function() {
+			// draw a border around the game board
+			ctx.fillStyle = 'gray';
+			// left, top, width, height
+			ctx.fillRect(0, 0, width, blockSize);
+			ctx.fillRect(0, height - blockSize, width, blockSize);
+			ctx.fillRect(0, 0, blockSize, height);
+			ctx.fillRect(width - blockSize, 0, blockSize, height);
+		};
+
+		var showScore = function() {
+			// show the current score of the game
+			ctx.font = '20px serif';
+			ctx.textBaseLine = 'top';
+			ctx.textAlign = 'left';
+			ctx.fillStyle = 'white';
+			ctx.fillText('Score: ' + score, blockSize*2, blockSize*3);
+		};
+		
+		var showInfo = function() {
+			// show information about the game
+			ctx.font = '20px serif';
+			ctx.textBaseLine = 'top';
+			ctx.textAlign = 'left';
+			ctx.fillStyle = 'white';
+			ctx.fillText('Version: ' + version, blockSize*2, height-blockSize*2);
+		};
+
+		var gameOver = function() {
+			// stop the game loop and show game over
+			playing = false;
+			ctx.font = '50px serif';
+			ctx.textBaseLine = 'middle';
+			ctx.fillStyle = 'white';
+			ctx.textAlign = 'center';
+			ctx.fillText('Game Over', width/2, height/2);
+		};
+		
+		// classes and methods
+		//
+
+		// Block class
+		var Block = function(col, row) {
+			// the game board contains blocks of blockSize x blockSize size
+			// a block shows in (col, row) coords
+			this.col = col;
+			this.row = row;
+		};
+
+		// Block methods
+		Block.prototype.drawSquare = function(color) {
+			// draw a square block of blockSize size in (col, row)
+			ctx.fillStyle = color;
+			ctx.fillRect(this.col*blockSize, this.row*blockSize, blockSize, blockSize);
+		};
+
+		Block.prototype.drawCircle = function(color) {
+			// draw a circle block of blockSize size in (col, row)
+			ctx.fillStyle = color;
+			ctx.beginPath();
+			let x = this.col*blockSize + blockSize/2;
+			let y = this.row*blockSize + blockSize/2;
+			ctx.arc(x, y, blockSize/2, 0, Math.PI*2);
+			ctx.fill();
+		};
+
+		Block.prototype.equal = function(otherBlock) {
+			return this.col == otherBlock.col && 
+				   this.row == otherBlock.row;	
+		};
+
+		// Snake class
+		var Snake = function() {
+			// snake body is made of Block objects. first Block is
+			// the head of the snake
+			this.segments = [
+				new Block(7, 5),
+				new Block(6, 5),
+				new Block(5, 5)
+			];
+
+			this.direction = 'right';
+			this.newDirection = 'right';
+		};
+
+		// Snake methods
+		Snake.prototype.draw = function() {
+			// draw the body of the snake on the game board
+			this.segments[0].drawCircle('lightblue');
+			for (var i = 1;i < this.segments.length; i++) {
+				let color = (i % 2 == 0) ? 'blue' : 'yellow';
+				this.segments[i].drawSquare(color);
+			}
+		};
+
+		Snake.prototype.checkCollision = function(head) {
+			// return true if the head touches the border of the
+			// game board or rest of the snake's body
+			var leftCollision = (head.col == 0);
+			var topCollision = (head.row == 0);
+			var rightCollision = (head.col == blocksInWidth-1);
+			var bottomCollision = (head.row == blocksInHeight-1);
+
+			var wallCollision = leftCollision || 
+								topCollision || 
+								rightCollision ||
+								bottomCollision;
+
+			var bodyCollision = false;
+			for (var i = 1;i < this.segments.length; i++) {
+				if (head.equal(this.segments[i])) {
+					bodyCollision = true;
+				}
+			}
+			return wallCollision || bodyCollision;
+		};
+
+		Snake.prototype.setDirection = function(direction) {
+			// set the new direction of the snake if it's a legal movement
+			if (this.direction == 'right' && direction == 'left') {
+				return;
+			} else if (this.direction == 'left' && direction == 'right') {
+				return;
+			} else if (this.direction == 'up' && direction == 'down') {
+				return;
+			} else if (this.direction == 'down' && direction == 'up') {
+				return;
+			}
+			this.newDirection = direction;
+		};
+
+		Snake.prototype.move = function() {
+			// create a new head Block and try to move the snake. If 
+			// there is a collision stop the game. If the snake eats
+			// the apple increment score and snake's body.
+			var head = this.segments[0];
+			var newHead;
+
+			this.direction = this.newDirection;
+
+			if (this.direction == 'right') {
+				newHead = new Block(head.col+1, head.row);
+			} else if (this.direction == 'left') {
+				newHead = new Block(head.col-1, head.row);
+			} else if (this.direction == 'up') {
+				newHead = new Block(head.col, head.row-1);
+			} else if (this.direction == 'down') {
+				newHead = new Block(head.col, head.row+1);
+			}
+
+			if (this.checkCollision(head)) {
+				gameOver();
+				return;
+			}
+
+			this.segments.unshift(newHead);
+			
+			if (newHead.equal(apple.position)) {
+				// increment the score and the speed every
+				// ten eaten apples
+				score++;
+				if (score % 10 == 0) {
+					speed-=5;
+				}
+				// move the apple to a new position
+				apple.move();
+			} else {
+				// remove the last Block from the snake's body
+				// to keep it at the same size
+				this.segments.pop();
+			}
+		};
+		
+		// Apple class
+		var Apple = function() {
+			this.position = new Block(10, 10);
+		};
+
+		// Apple methods
+		Apple.prototype.draw = function() {
+			// show the apple on the game board
+			this.position.drawCircle('limegreen');
+		};
+
+		Apple.prototype.move = function() {
+			// position the apple randomly on the game board
+			var randomX = Math.floor(Math.random() * (blocksInWidth - 2)) + 1;
+			var randomY = Math.floor(Math.random() * (blocksInHeight - 2)) + 1;
+			this.position = new Block(randomX, randomY);
+		};
+
+		// set up game
+		var snake = new Snake();
+		var apple = new Apple();
+
+		// game loop
+		var gameLoop = function() {
+			ctx.clearRect(0, 0, width, height);
+			showScore();
+			snake.move();
+			snake.draw();
+			apple.draw();
+			drawBorder();
+			showInfo();
+
+			if (playing) {
+				// if not game over
+				setTimeout(gameLoop, speed);
+			}
+		};
+
+		// start the game
+		gameLoop();
+
+		// keyboard control
+		var directions = {
+			37: 'left',
+			38: 'up',
+			39: 'right',
+			40: 'down'
+		};
+
+		$('body').keydown(function(event) {
+			var newDirection = directions[event.keyCode];
+			if (newDirection !== undefined) {
+				snake.setDirection(newDirection);
+			}
+		});
+	</script>
+ </body>
+</html>
